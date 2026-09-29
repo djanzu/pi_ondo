@@ -1,0 +1,11 @@
+[project]
+name = "disp-pi-ondo"
+version = "0.1.0"
+description = "ラズパイの温度DB管理 (Django + SQLite)"
+requires-python = ">=3.12"
+dependencies = [
+    "django>=5.2,<6.0",
+]
+
+[tool.uv]
+package = false

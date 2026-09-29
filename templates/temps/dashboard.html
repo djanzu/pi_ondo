@@ -1,0 +1,78 @@
+{% load static %}<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>温度記録 | 過去{{ hours }}時間</title>
+<link rel="stylesheet" href="{% static 'css/dashboard.css' %}">
+<script src="{% static 'js/chart.umd.min.js' %}" defer></script>
+<script src="{% static 'js/dashboard.js' %}" defer
+        data-series="{{ series_json|escape }}"
+        data-refresh="{{ auto_refresh_seconds }}"></script>
+</head>
+<body>
+<main class="board">
+  <header class="board__head">
+    <h1 class="board__title">温度記録</h1>
+    <p class="board__meta">
+      対象: 過去{{ hours }}時間 / 最大{{ count }}件
+      <span class="board__sep">/</span>
+      更新: <time id="generated-at" datetime="{{ generated_at|date:'c' }}">{{ generated_at|date:'Y-m-d H:i:s' }}</time>
+      <span id="reload-state" class="board__state"></span>
+    </p>
+  </header>
+
+  <section class="panel">
+    <h2 class="panel__title">{{ label_current }}</h2>
+    <table class="record" id="table-current">
+      <thead>
+        <tr><th class="col-dt" scope="col">日時</th><th class="col-temp" scope="col">温度</th></tr>
+      </thead>
+      <tbody>
+        {% for row in table_current.rows %}
+        <tr class="{% if forloop.counter0 == table_current.max_index %}is-max{% elif forloop.counter0 == table_current.min_index %}is-min{% endif %}">
+          <th class="col-dt" scope="row">{{ row.dt_text }}</th>
+          <td class="col-temp">{{ row.temp|floatformat:1 }}</td>
+        </tr>
+        {% empty %}
+        <tr><td class="col-dt empty" colspan="2">該当する記録がありません</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </section>
+
+  <section class="panel">
+    <h2 class="panel__title">{{ label_one_year_ago }}</h2>
+    <table class="record" id="table-year-ago">
+      <thead>
+        <tr><th class="col-dt" scope="col">日時</th><th class="col-temp" scope="col">温度</th></tr>
+      </thead>
+      <tbody>
+        {% for row in table_year_ago.rows %}
+        <tr class="{% if forloop.counter0 == table_year_ago.min_index %}is-year-min{% elif forloop.counter0 == table_year_ago.max_index %}is-max{% endif %}">
+          <th class="col-dt" scope="row">{{ row.dt_text }}</th>
+          <td class="col-temp">{{ row.temp|floatformat:1 }}</td>
+        </tr>
+        {% empty %}
+        <tr><td class="col-dt empty" colspan="2">1年前の記録がありません</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </section>
+
+  <section class="panel panel--chart">
+    <div class="legend" id="legend" hidden>
+      <span class="legend__item"><i class="legend__line"></i>{{ label_current }}</span>
+      <span class="legend__item"><i class="legend__line legend__line--dashed"></i>{{ label_one_year_ago }}</span>
+      <span class="legend__item"><i class="legend__chip legend__chip--max"></i>{{ label_current }}-最大</span>
+      <span class="legend__item"><i class="legend__chip legend__chip--min"></i>{{ label_current }}-最小</span>
+      <span class="legend__item"><i class="legend__chip legend__chip--year-min"></i>{{ label_one_year_ago }}-最小</span>
+    </div>
+    <div class="chart">
+      <canvas id="temp-chart" role="img"
+              aria-label="過去{{ hours }}時間の温度推移と1年前の同じ時刻の温度の折れ線グラフ"></canvas>
+    </div>
+  </section>
+</main>
+</body>
+</html>

@@ -1,0 +1,165 @@
+/* 温度記録ダッシュボード: fig1 のレイアウト(現在/1年前/グラフ)を再現 */
+
+:root {
+  --bg: #ffffff;
+  --ink: #1a1a1a;
+  --grid: #b9bcc0;
+  --grid-strong: #8d9196;
+  --mark-border: #5a5f66;
+  --muted: #6b7076;
+  --hl-max: #dfe6ee;      /* 現在の最大 = 青 (fig1 実測値) */
+  --hl-min: #e0f0dc;      /* 現在の最小 = 緑 */
+  --hl-year-min: #f8dbe6; /* 1年前の最小 = ピンク */
+  --line-current: #22262b;
+  --line-year: #8f959c;
+  --pad: 4px;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  padding: 16px;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: "Hiragino Kaku Gothic ProN", "Yu Gothic", "Noto Sans JP", Meiryo, sans-serif;
+  font-variant-numeric: tabular-nums;
+}
+
+.board {
+  display: grid;
+  grid-template-columns: auto auto minmax(320px, 1fr);
+  gap: 0 28px;
+  align-items: start;
+  max-width: 1800px;
+}
+
+.board__head {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: baseline;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+
+.board__title {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: .02em;
+}
+
+.board__meta {
+  margin: 0;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.board__sep { margin: 0 6px; color: var(--grid); }
+
+.board__state { margin-left: 8px; }
+
+.board__state::before { content: "更新中…"; }
+.board__state:empty::before { content: ""; }
+
+/* --- パネル ---------------------------------------------------------- */
+
+.panel__title {
+  margin: 0 0 6px;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+/* --- 記録テーブル ---------------------------------------------------- */
+
+.record {
+  border-collapse: collapse;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.record th,
+.record td {
+  border: 1px solid var(--grid);
+  padding: 1px var(--pad);
+  text-align: right;
+  font-weight: 400;
+  white-space: nowrap;
+}
+
+.record thead th {
+  text-align: center;
+  font-weight: 400;
+  background: #f4f5f6;
+}
+
+.record .col-dt { min-width: 8.6em; }
+.record .col-temp { min-width: 3.2em; }
+.record .empty { text-align: center; color: var(--muted); }
+
+.record tr.is-max > * { background: var(--hl-max); }
+.record tr.is-min > * { background: var(--hl-min); }
+.record tr.is-year-min > * { background: var(--hl-year-min); }
+
+/* --- グラフ ---------------------------------------------------------- */
+
+.panel--chart { min-width: 0; position: relative; }
+
+/* fig1 と同じ: グラフ枠の右上に縦積み・枠付きの凡例 */
+.legend {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 5px;
+  width: -moz-fit-content;
+  width: fit-content;
+  margin: 0 0 6px auto;
+  padding: 6px 10px;
+  background: #ffffff;
+  border: 1px solid var(--grid);
+  font-size: 12px;
+  line-height: 1.3;
+}
+
+.legend__item { display: inline-flex; align-items: center; gap: 6px; }
+
+.legend__line,
+.legend__chip { display: inline-block; }
+
+.legend__line {
+  width: 30px;
+  height: 0;
+  border-top: 2px solid var(--line-current);
+}
+
+/* fig1 では 1年前 は細い実線 */
+.legend__line--dashed {
+  border-top: 1.4px solid var(--line-year);
+}
+
+.legend__chip {
+  width: 18px;
+  height: 9px;
+  border: 1px solid var(--mark-border, #5a5f66);
+}
+
+.legend__chip--max { background: var(--hl-max); }
+.legend__chip--min { background: var(--hl-min); }
+.legend__chip--year-min { background: var(--hl-year-min); }
+
+.chart {
+  position: relative;
+  height: min(72vh, 620px);
+  min-height: 320px;
+  border: 1px solid var(--grid);
+  padding: 6px;
+}
+
+/* --- 狭い画面 --------------------------------------------- */
+
+@media (max-width: 1100px) {
+  .board { grid-template-columns: 1fr; gap: 24px 0; }
+  .chart { height: 360px; }
+}

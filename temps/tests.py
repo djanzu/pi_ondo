@@ -1,6 +1,12 @@
+import io
 import json
+import tempfile
 from datetime import datetime, timedelta
+from pathlib import Path
+from unittest import mock
 
+from django.core.management import call_command
+from django.core.management.base import CommandError
 from django.test import Client, TestCase
 from django.utils import timezone
 
@@ -224,3 +230,111 @@ class ReplaceYearsTest(TestCase):
 
         self.assertEqual(replace_years(datetime(2024, 2, 29, 14, 16), -1).date().isoformat(), "2023-02-28")
         self.assertEqual(replace_years(datetime(2025, 2, 28, 0, 0), -1).date().isoformat(), "2024-02-28")
+
+
+class FakeStdin(io.StringIO):
+    """確認プロンプトの stdin を偽装する (対話的なターミナルに見せる)。"""
+
+    def isatty(self):
+        return True
+
+
+class ClearTempsCommandTest(TestCase):
+    """manage.py clear_temps (モデル temp のクリア) の挙動。"""
+
+    def setUp(self):
+        self.now = timezone.localtime(timezone.now()).replace(second=0, microsecond=0)
+        for i in range(10):  # 現在側 10 件 (10 分間隔)
+            Temp.objects.create(dt=self.now - timedelta(minutes=i * 10), temp=20 + i / 10)
+        for i in range(5):  # 1 年前側 5 件
+            Temp.objects.create(dt=replace_years(self.now - timedelta(minutes=i * 10), -1), temp=15 + i / 10)
+
+    def clear(self, *args, answer=None):
+        """コマンドを走らせて標準出力を返す。answer は確認プロンプトへの入力。"""
+        out = io.StringIO()
+        if answer is None:
+            call_command("clear_temps", *args, stdout=out)
+        else:
+            with mock.patch("sys.stdin", FakeStdin(f"{answer}\n")):
+                call_command("clear_temps", *args, stdout=out)
+        return out.getvalue()
+
+    def test_clear_all_with_yes(self):
+        out = self.clear("--yes")
+        self.assertEqual(Temp.objects.count(), 0)
+        self.assertIn("削除対象: 15 件 / 全 15 件 (全期間)", out)
+        self.assertIn("15 件削除しました", out)
+
+    def test_clear_confirmed_interactively(self):
+        self.clear(answer="y")
+        self.assertEqual(Temp.objects.count(), 0)
+
+    def test_clear_declined_keeps_records(self):
+        out = self.clear(answer="n")
+        self.assertEqual(Temp.objects.count(), 15)
+        self.assertIn("中止しました", out)
+
+    def test_clear_refuses_without_confirmation(self):
+        """対話的でない環境 (パイプや cron) では --yes なしで消さない。"""
+        with mock.patch("sys.stdin", io.StringIO("y\n")):
+            with self.assertRaises(CommandError):
+                self.clear()
+        self.assertEqual(Temp.objects.count(), 15)
+
+    def test_clear_days_deletes_only_old_records(self):
+        self.clear("--days", "30", "--yes")
+        self.assertEqual(Temp.objects.count(), 10)  # 1 年前側だけ消える
+        self.assertTrue(all(r.dt > self.now - timedelta(days=1) for r in Temp.objects.all()))
+
+    def test_clear_year_ago_only(self):
+        out = self.clear("--year-ago", "--yes")
+        self.assertEqual(Temp.objects.count(), 10)
+        self.assertIn("1 年前", out)
+
+    def test_clear_range(self):
+        """--before / --after で期間指定 (after 以上, before 未満)。"""
+        fmt = "%Y-%m-%d %H:%M:%S"
+        out = self.clear(
+            "--before",
+            (self.now - timedelta(minutes=25)).strftime(fmt),
+            "--after",
+            (self.now - timedelta(minutes=45)).strftime(fmt),
+            "--yes",
+        )
+        self.assertEqual(Temp.objects.count(), 13)  # now-30 分, now-40 分 の 2 件
+        self.assertIn("2 件削除しました", out)
+
+    def test_clear_dry_run_keeps_records(self):
+        out = self.clear("--dry-run")
+        self.assertEqual(Temp.objects.count(), 15)
+        self.assertIn("削除対象: 15 件", out)
+        self.assertIn("--dry-run のため削除しませんでした", out)
+
+    def test_clear_backup_can_be_restored(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "dump.json"
+            out = self.clear("--backup", str(path), "--yes")
+            self.assertIn("に保存しました", out)
+            self.assertEqual(Temp.objects.count(), 0)
+            call_command("loaddata", str(path), verbosity=0)
+            self.assertEqual(Temp.objects.count(), 15)
+            self.assertEqual(str(Temp.objects.order_by("dt").first().temp), "15.4")
+
+    def test_clear_when_nothing_to_delete(self):
+        Temp.objects.all().delete()
+        self.assertIn("削除するレコードはありません", self.clear("--yes"))
+
+    def test_clear_rejects_bad_arguments(self):
+        fmt = "%Y-%m-%d %H:%M:%S"
+        same = self.now.strftime(fmt)
+        cases = [
+            ("--days", "0"),
+            ("--before", "not-a-date"),
+            ("--year-ago", "--years", "0"),
+            ("--before", same, "--after", same),
+        ]
+        for args in cases:
+            with self.subTest(args=args):
+                with self.assertRaises(CommandError):
+                    self.clear(*args, "--yes")
+        self.assertEqual(Temp.objects.count(), 15)

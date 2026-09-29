@@ -42,6 +42,27 @@ uv run python manage.py seed_temps --clear --year-ago    # 作り直す
 `--missing 0.05` (1年前側で欠測させる割合) / `--clear` (全削除してから作成) /
 `--seed N` / `--base 26.0` (現在の平均温度) / `--amp 5.0` (変動幅) / `--year-base 24.0`。
 
+### 温度記録をクリアする
+
+`clear_temps` で temps テーブルのレコードを消す。対話では確認プロンプトが出るので、
+スクリプトや cron から叩くときは `--yes` を付ける (`--yes` 無しで確認できない環境からは
+エラーにして削除しない)。
+
+```bash
+uv run python manage.py clear_temps                       # 全件削除 (y/N 確認あり)
+uv run python manage.py clear_temps --yes                 # 確認せず全件削除
+uv run python manage.py clear_temps --dry-run             # 削除せずに対象件数だけ確認
+uv run python manage.py clear_temps --days 30             # 30日より前だけ (定期メンテナンス向け)
+uv run python manage.py clear_temps --year-ago            # 1年前の同じ月日時分まわりだけ
+uv run python manage.py clear_temps --before "2026-09-01 00:00" --after "2026-01-01"  # 期間指定
+uv run python manage.py clear_temps --backup backup.json --yes   # 退避してから削除
+```
+
+`--before` / `--after` / `--days` / `--year-ago` を組み合わせると AND 条件になる
+(`--after` 以上 `--before` 未満 AND 1年前まわり)。日時書式は API と同じで
+`YYYY-MM-DD [HH:MM[:SS]]` (`/` 区切りも可、TZ 指定が無ければ Asia/Tokyo)。
+`--backup` で書き出した JSON は `uv run python manage.py loaddata backup.json` で復元できる。
+
 ## 画面
 
 `docs/img/fig1.png` のレイアウトを再現した 1 画面。
@@ -124,10 +145,11 @@ WantedBy=multi-user.target
 ## テスト
 
 ```bash
-uv run python manage.py test temps   # 25 tests
+uv run python manage.py test temps   # 36 tests
 ```
 
-入力解析・重複上書き・件数/期間の絞り込み・1年前の対応づけ (許容範囲外は除外)・空 DB 表示などを検証。
+入力解析・重複上書き・件数/期間の絞り込み・1年前の対応づけ (許容範囲外は除外)・空 DB 表示、
+`clear_temps` の確認挙動 (中止 / 対話不可時に削除しない) ・期間指定・退避と復元などを検証。
 
 ## 未実装 (memo.md の「カスタマイズ」)
 
@@ -144,7 +166,7 @@ temps/               # モデル・ビュー・集計・テスト
   models.py          # temps テーブル (dt / temp)
   services.py        # 表示用の集計 (期間取得, 1年前の対応づけ)
   views.py           # 画面 + API
-  management/commands/seed_temps.py
+  management/commands/seed_temps.py, clear_temps.py
 templates/temps/dashboard.html
 static/css/dashboard.css
 static/js/dashboard.js, chart.umd.min.js

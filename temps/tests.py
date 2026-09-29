@@ -2,6 +2,7 @@ import io
 import json
 import tempfile
 from datetime import datetime, timedelta
+from decimal import Decimal
 from pathlib import Path
 from unittest import mock
 
@@ -338,3 +339,107 @@ class ClearTempsCommandTest(TestCase):
                 with self.assertRaises(CommandError):
                     self.clear(*args, "--yes")
         self.assertEqual(Temp.objects.count(), 15)
+
+
+class SeedTempsCsvCommandTest(TestCase):
+    """manage.py seed_temps_csv (CSV からのインポート) の挙動。"""
+
+    def seed(self, text, *args, answer=None):
+        """CSV 文字列を一時ファイルにしてコマンドを走らせる。標準出力を返す。"""
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".csv", encoding="utf-8", newline="") as f:
+            f.write(text)
+            f.flush()
+            out = io.StringIO()
+            if answer is None:
+                call_command("seed_temps_csv", f.name, *args, stdout=out)
+            else:
+                with mock.patch("sys.stdin", FakeStdin(f"{answer}\n")):
+                    call_command("seed_temps_csv", f.name, *args, stdout=out)
+            return out.getvalue()
+
+    # 1列目=日時 / 2列目=温度。3列目以降は無視される実データ (docs/pi.csv) の形
+    CSV = (
+        "2025/08/07 22:29:44,45.7,2026/09/29 21:00:01,36\r\n"
+        "2025/08/07 22:30:01,46.2,2026/09/29 20:45:01,36\r\n"
+        "2025/08/08 8:15:01,45.2,,\r\n"
+        "\r\n"
+    )
+
+    def test_import_ignores_header_and_extra_columns(self):
+        out = self.seed("dt,temp,note,extra\r\n" + self.CSV)
+        self.assertIn("1 行目をヘッダとして無視しました", out)
+        self.assertEqual(Temp.objects.count(), 3)
+        row = Temp.objects.order_by("dt").first()
+        self.assertEqual(str(row.temp), "45.7")
+        # 秒まで保持される / JST として解釈される
+        self.assertEqual(timezone.localtime(row.dt).strftime("%Y-%m-%d %H:%M:%S"), "2025-08-07 22:29:44")
+
+    def test_import_without_header(self):
+        self.seed(self.CSV)
+        self.assertEqual(Temp.objects.count(), 3)
+        self.assertEqual(str(Temp.objects.order_by("dt").last().temp), "45.2")
+
+    def test_import_is_repeatable(self):
+        self.seed(self.CSV)
+        out = self.seed(self.CSV)
+        self.assertEqual(Temp.objects.count(), 3)
+        self.assertIn("新規 0 件 / 更新 3 件", out)
+
+    def test_import_later_row_wins(self):
+        self.seed("2026/09/29 10:00:00,25.4\r\n2026/09/29 10:00:00,26.8\r\n")
+        self.assertEqual(Temp.objects.count(), 1)
+        self.assertEqual(str(Temp.objects.get().temp), "26.8")
+
+    def test_import_skips_existing(self):
+        Temp.objects.create(dt=timezone.make_aware(datetime(2026, 9, 29, 10, 0, 0)), temp="11.1")
+        out = self.seed("2026/09/29 10:00:00,26.8\r\n2026/09/29 10:15:00,27.0\r\n", "--skip-existing")
+        self.assertIn("新規 1 件 / 更新 0 件", out)
+        self.assertEqual(str(Temp.objects.get(temp=Decimal("11.1")).temp), "11.1")
+
+    def test_import_reports_bad_rows(self):
+        out = self.seed("notadate,1\r\n2026/09/29 10:00:00,x\r\n2026/09/29 10:15:00,26.0\r\n")
+        self.assertIn("不正 2", out)
+        self.assertEqual(Temp.objects.count(), 1)
+
+    def test_import_since_until(self):
+        out = self.seed(self.CSV, "--since", "2025-08-08 00:00:00")
+        self.assertIn("対象 1 件", out)
+        self.assertEqual(Temp.objects.count(), 1)
+
+    def test_import_dry_run_writes_nothing(self):
+        out = self.seed(self.CSV, "--dry-run")
+        self.assertIn("--dry-run のため書き込みませんでした", out)
+        self.assertEqual(Temp.objects.count(), 0)
+
+    def test_import_clear_then_import(self):
+        Temp.objects.create(dt=timezone.localtime(timezone.now()), temp="20.0")
+        out = self.seed(self.CSV, "--clear", "--yes")
+        self.assertIn("件削除しました", out)
+        self.assertEqual(Temp.objects.count(), 3)
+
+    def test_import_clear_needs_confirmation(self):
+        Temp.objects.create(dt=timezone.localtime(timezone.now()), temp="20.0")
+        out = self.seed(self.CSV, "--clear", answer="n")
+        self.assertIn("中止しました", out)
+        self.assertEqual(Temp.objects.count(), 1)
+
+    def test_import_rejects_bad_arguments(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            good = self.csv_file(tmp)
+            cases = [
+                (str(Path(tmp) / "nope.csv"),),
+                (good, "--since", "not-a-date"),
+                (good, "--since", "2026-09-29", "--until", "2026-01-01"),
+                (good, "--encoding", "no-such-codec"),
+            ]
+            for args in cases:
+                with self.subTest(args=args):
+                    with self.assertRaises(CommandError):
+                        call_command("seed_temps_csv", *args)
+            self.assertEqual(Temp.objects.count(), 0)
+
+    def csv_file(self, tmp):
+        """一時ディレクトリに CSV を置いてパスを返す。"""
+        path = Path(tmp) / "a.csv"
+        path.write_text(self.CSV, encoding="utf-8")
+        return str(path)

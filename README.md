@@ -42,6 +42,29 @@ uv run python manage.py seed_temps --clear --year-ago    # 作り直す
 `--missing 0.05` (1年前側で欠測させる割合) / `--clear` (全削除してから作成) /
 `--seed N` / `--base 26.0` (現在の平均温度) / `--amp 5.0` (変動幅) / `--year-base 24.0`。
 
+### 既存スプレッドシートの CSV を取り込む
+
+`seed_temps_csv` は既存の計測ログ (CSV) を temps テーブルに投入する。
+**読み取るのは 1 列目 (記録日時) と 2 列目 (温度) だけ**で、それ以外の列とヘッダ行は無視する。
+既定ではリポジトリ直下の `docs/pi.csv` を読む。
+
+```bash
+uv run python manage.py seed_temps_csv                        # docs/pi.csv を取り込む
+uv run python manage.py seed_temps_csv path/to/file.csv       # ファイルを指定する
+uv run python manage.py seed_temps_csv --dry-run              # 書き込まずに対象件数だけ確認
+uv run python manage.py seed_temps_csv --clear --yes          # 全削除してから取り込む
+uv run python manage.py seed_temps_csv --skip-existing        # 既存の dt は上書きしない
+uv run python manage.py seed_temps_csv --since "2026-09-01" --until "2026-10-01"
+```
+
+日時書式は API と同じく `YYYY-MM-DD [HH:MM[:SS]]` (`/` 区切りや `2025/08/08 8:15:01` の1桁時も可、
+TZ 指定が無ければ Asia/Tokyo)。秒もそのまま保持する。同じ日時の行が複数あれば後の行を採用する。
+既存の同 dt レコードは温度だけ上書き (更新) されるので、何度実行しても件数は増えない。
+読めない行はエラーにせず読み飛ばし、先頭 5 件を理由とともに表示する。
+
+主なオプション: `--skip-rows N` (先頭 N 行を無視。既定は 1 行目の自動判定) /
+`--limit N` / `--delimiter ";"` / `--encoding cp932` など。
+
 ### 温度記録をクリアする
 
 `clear_temps` で temps テーブルのレコードを消す。対話では確認プロンプトが出るので、
@@ -145,7 +168,7 @@ WantedBy=multi-user.target
 ## テスト
 
 ```bash
-uv run python manage.py test temps   # 36 tests
+uv run python manage.py test temps   # 47 tests
 ```
 
 入力解析・重複上書き・件数/期間の絞り込み・1年前の対応づけ (許容範囲外は除外)・空 DB 表示、
@@ -166,9 +189,9 @@ temps/               # モデル・ビュー・集計・テスト
   models.py          # temps テーブル (dt / temp)
   services.py        # 表示用の集計 (期間取得, 1年前の対応づけ)
   views.py           # 画面 + API
-  management/commands/seed_temps.py, clear_temps.py
+  management/commands/seed_temps.py, seed_temps_csv.py, clear_temps.py
 templates/temps/dashboard.html
 static/css/dashboard.css
 static/js/dashboard.js, chart.umd.min.js
-docs/memo.md, docs/img/fig1.png
+docs/memo.md, docs/pi.csv, docs/img/fig1.png
 ```

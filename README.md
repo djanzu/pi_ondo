@@ -157,13 +157,31 @@ Description=disp_pi_ondo dashboard
 After=network.target
 
 [Service]
-WorkingDirectory=/home/pi/disp_pi_ondo
-ExecStart=/home/pi/.local/bin/uv run python manage.py runserver 0.0.0.0:8181 --noreload
+User=YOUR_NAME
+WorkingDirectory=/home/YOUR_NAME/pi_ondo
+ExecStart=/home/YOUR_NAME/.local/bin/uv run python manage.py runserver 0.0.0.0:8181 --noreload
 Restart=always
 
 [Install]
 WantedBy=multi-user.target
 ```
+
+```
+sudo systemctl daemon-reload
+sudo systemctl enable ondo
+sudo systemctl restart ondo
+```
+
+### ステータス
+```
+systemctl status ondo
+```
+
+### ログ
+```
+journalctl -u ondo -f
+```
+
 
 ## テスト
 

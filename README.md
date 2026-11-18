@@ -1,19 +1,50 @@
 # disp_pi_ondo — ラズパイの温度 DB 管理
 
 Raspberry Pi で収集した温度を SQLite にためて、1 画面で数値と折れ線グラフを表示する Django アプリ。
-(`docs/memo.md` の仕様どおり、docker は使わない / ログイン不要 / 待ち受けポート **8181**)
+(ログイン不要 / 待ち受けポート **8181**)
 
-- Python 3.12+ / Django 5.2 / SQLite / uv / Chart.js (vendored)
+- Python 3.12+ / Django 5.2 / SQLite / uv または Docker Compose / Chart.js (vendored)
 - 画面は 1 画面のみ。ログイン不要で `http://<ラズパイのIP>:8181/` にアクセスするだけで見られる
 
-## 必要もの
+## 起動方法
+
+Docker Compose を利用する方法と、ホスト上の uv を利用する方法のどちらでも実行できます。
+
+### 方法 1: Docker Compose で起動する場合
+
+Docker および Docker Compose がインストールされていれば、以下のコマンドだけで起動できます (初回にマイグレーションも自動実行されます)。
+
+```bash
+docker compose up -d
+```
+※古い環境の場合は `docker-compose up -d`
+
+ブラウザで `http://127.0.0.1:8181/` を開きます。
+SQLite データベース (`db.sqlite3`) はカレントディレクトリに保存されるため、コンテナを停止・破棄してもデータは維持されます。
+
+コンテナの停止:
+```bash
+docker compose down
+```
+
+コンテナ経由で manage コマンドを実行する場合 (例: シードデータの投入):
+```bash
+docker compose exec web python manage.py seed_temps --year-ago
+docker compose exec web python manage.py seed_temps
+```
+
+---
+
+### 方法 2: uv で起動する場合
+
+#### 必要なもの
 
 ```bash
 # uv が入っていない場合 (公式スクリプト)
 curl -LsSf https://astral.sh/uv/install.sh | sh
 ```
 
-## セットアップ
+#### セットアップ
 
 ```bash
 cd disp_pi_ondo
